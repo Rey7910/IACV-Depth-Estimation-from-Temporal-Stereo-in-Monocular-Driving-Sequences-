@@ -1,1 +1,1 @@
-# IACV-Depth-Estimation-from-Temporal-Stereo-in-Monocular-Driving-Sequences-
+# Depth Estimation from Temporal Stereo in Monocular Driving Sequences
