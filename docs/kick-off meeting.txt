@@ -1,0 +1,18 @@
+time to impact estimation->(images - autonomous driving)
+
+challenge---> can we use this kind of estimation for autonomous driving estimation?
+
+application for time to impact estimation
+
+start from the slides of Caglioti --------> search by own.
+
+https://www.cvlibs.net/datasets/kitti/
+
+regarding kipty
+
+raw data - sequences of autonomous
+
+two subsequent frames__clear (immediately the next one)
+
+raw data
+
