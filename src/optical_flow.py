@@ -23,14 +23,12 @@ def compute_sparse_flow(prev_img, next_img):
         minDistance=7,
         blockSize=7
     )
+    # Security verification: if it does not find points, return void arrays
+    if p0 is None:
+        return np.array([]), np.array([])
 
     # 2. Compute optical flow using the Lucas-Kanade method
-    p1, st, err = cv2.calcOpticalFlowPyramidLK(
-        prev_gray,
-        next_gray,
-        p0,
-        None
-    )
+    p1, st, err = cv2.calcOpticalFlowPyrLK(prev_gray, next_gray, p0, None)
 
     # Keep only successfully tracked points
     good_new = p1[st == 1]
