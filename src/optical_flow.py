@@ -15,6 +15,15 @@ def compute_sparse_flow(prev_img, next_img):
         prev_gray, next_gray = prev_img, next_img
 
     # 1. Detect points to track using Shi-Tomasi corner detection
+    '''
+    p0 = cv2.goodFeaturesToTrack(
+    prev_gray, 
+    mask=None, 
+    maxCorners=1000,    # Sube de 100 a 1000
+    qualityLevel=0.01,  # Baja de 0.3 a 0.01 (acepta esquinas más débiles)
+    minDistance=3,      # Baja de 7 a 3 (permite puntos más juntos)
+    blockSize=3
+) '''
     p0 = cv2.goodFeaturesToTrack(
         prev_gray,
         mask=None,
@@ -23,6 +32,8 @@ def compute_sparse_flow(prev_img, next_img):
         minDistance=7,
         blockSize=7
     )
+    
+    
     # Security verification: if it does not find points, return void arrays
     if p0 is None:
         return np.array([]), np.array([])
