@@ -285,3 +285,74 @@ def plot_cross_ratio_validation(
     print(f"Temporal Reliability Index: {reliability:.2f}%")
 
     plt.show()
+
+
+def plot_dynamic_segmentation(
+    img,
+    p0_static,
+    p0_dynamic,
+    p1_dynamic,
+    foe,
+    title="Experiment 04: Dynamic Segmentation"
+):
+    """
+    Visualizes scene segmentation: static points in green
+    and dynamic objects (with motion vectors) in red.
+    """
+    plt.figure(figsize=(15, 8))
+    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+    # 1. Draw static points (green) - reliable scene
+    if len(p0_static) > 0:
+        plt.scatter(
+            p0_static[:, 0],
+            p0_static[:, 1],
+            color='lime',
+            s=15,
+            alpha=0.6,
+            label='Static Scene (Safe for TTI)'
+        )
+
+    # 2. Draw dynamic vectors (red) - moving objects
+    if len(p0_dynamic) > 0:
+        for i in range(len(p0_dynamic)):
+            a, b = p0_dynamic[i]
+            c, d = p1_dynamic[i]
+
+            plt.arrow(
+                a, b,
+                c - a,
+                d - b,
+                color='red',
+                head_width=5,
+                width=1.5,
+                label='Dynamic Object' if i == 0 else ""
+            )
+
+    # 3. Draw FOE (yellow)
+    plt.plot(
+        foe[0],
+        foe[1],
+        'yo',
+        markersize=12,
+        label='Epipole (FOE)'
+    )
+
+    # Statistics
+    total_pts = len(p0_static) + len(p0_dynamic)
+    perc_dynamic = (len(p0_dynamic) / total_pts) * 100 if total_pts > 0 else 0
+
+    plt.title(
+        f"{title}\nDynamic: {perc_dynamic:.2f}% of points",
+        fontsize=15
+    )
+
+    plt.legend()
+    plt.axis('off')
+
+    print(f"--- SEGMENTATION REPORT ---")
+    print(f"Static points: {len(p0_static)}")
+    print(f"Dynamic points: {len(p0_dynamic)}")
+    print(f"Percentage of dynamic motion: {perc_dynamic:.2f}%")
+
+    plt.show()
