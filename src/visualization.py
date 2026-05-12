@@ -231,3 +231,57 @@ def plot_vanishing_point_validation(
         print(f"STATUS: {status}. {desc}")
 
     plt.show()
+
+
+def plot_cross_ratio_validation(
+    img,
+    p0_final,
+    p2_final,
+    p0_noisy,
+    total_points,
+    title="Experiment 03: Cross-Ratio Validation"
+):
+    """
+    Visualizes consistent flow points (green) and rejected points (red)
+    based on the projective invariant Cross-Ratio.
+    """
+    plt.figure(figsize=(15, 8))
+    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+    # 1. Draw consistent points (green long vectors)
+    for i in range(len(p0_final)):
+        plt.arrow(
+            p0_final[i, 0], p0_final[i, 1],
+            p2_final[i, 0] - p0_final[i, 0],
+            p2_final[i, 1] - p0_final[i, 1],
+            color='lime',
+            head_width=3,
+            alpha=0.7,
+            label='Consistent' if i == 0 else ""
+        )
+
+    # 2. Draw noisy points (red dots)
+    if len(p0_noisy) > 0:
+        plt.scatter(
+            p0_noisy[:, 0],
+            p0_noisy[:, 1],
+            color='red',
+            s=20,
+            alpha=0.8,
+            label='Inconsistent (Noise/Dynamic)'
+        )
+
+    # Metrics
+    reliability = (len(p0_final) / total_points) * 100
+
+    plt.title(
+        f"{title}\nConsistent: {len(p0_final)} | Discarded: {len(p0_noisy)}",
+        fontsize=15
+    )
+    plt.legend()
+    plt.axis('off')
+
+    print(f"--- TEMPORAL CONSISTENCY ---")
+    print(f"Temporal Reliability Index: {reliability:.2f}%")
+
+    plt.show()
