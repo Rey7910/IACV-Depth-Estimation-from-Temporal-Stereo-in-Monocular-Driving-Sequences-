@@ -145,3 +145,89 @@ def plot_validation_stats(errors, z_comparison):
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_vanishing_point_validation(
+    img,
+    foe_theoretical,
+    vp_estimated,
+    filtered_lines,
+    title="Projective Geometry Validation"
+):
+    """
+    Visualizes the convergence of road lines toward the vanishing point (VP)
+    and its relationship with the theoretical FOE.
+    """
+    plt.figure(figsize=(15, 8))
+    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    h, w = img.shape[:2]
+
+    # 1. Draw detected lines and their extension toward the VP
+    if filtered_lines is not None:
+        for line in filtered_lines:
+            x1, y1, x2, y2 = line[0]
+            plt.plot([x1, x2], [y1, y2], color='cyan', linewidth=2, alpha=0.8)
+
+            if vp_estimated is not None:
+                plt.plot(
+                    [x2, vp_estimated[0]],
+                    [y2, vp_estimated[1]],
+                    color='cyan',
+                    linestyle=':',
+                    linewidth=1,
+                    alpha=0.3
+                )
+
+    # 2. Draw theoretical FOE (red)
+    plt.plot(
+        foe_theoretical[0],
+        foe_theoretical[1],
+        'ro',
+        markersize=15,
+        markeredgecolor='white',
+        label='Theoretical FOE (Calibration)'
+    )
+
+    # 3. Draw estimated vanishing point (blue)
+    if vp_estimated is not None:
+        plt.plot(
+            vp_estimated[0],
+            vp_estimated[1],
+            'bx',
+            markersize=12,
+            markeredgewidth=3,
+            label='Vanishing Point (Lines)'
+        )
+
+    # 4. Perspective guides from lower corners
+    plt.plot(
+        [0, foe_theoretical[0]],
+        [h, foe_theoretical[1]],
+        'y--',
+        alpha=0.3,
+        label='Perspective Guide'
+    )
+
+    plt.plot(
+        [w, foe_theoretical[0]],
+        [h, foe_theoretical[1]],
+        'y--',
+        alpha=0.3
+    )
+
+    plt.title(title, fontsize=16)
+    plt.legend(loc='upper right')
+    plt.axis('off')
+
+    # 5. Error diagnostics
+    if vp_estimated is not None:
+        pixel_error = np.linalg.norm(vp_estimated - foe_theoretical)
+
+        print(f"--- GEOMETRY DIAGNOSTICS ---")
+        print(f"FOE-VP Distance: {pixel_error:.2f} pixels")
+
+        status = "SUCCESS" if pixel_error < 50 else f"WARNING ({pixel_error:.1f}px)"
+        desc = "Straight-line motion." if pixel_error < 50 else "Possible curve/inclination."
+        print(f"STATUS: {status}. {desc}")
+
+    plt.show()
