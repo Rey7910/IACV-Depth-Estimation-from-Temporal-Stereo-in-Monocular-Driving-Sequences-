@@ -3,45 +3,30 @@ import numpy as np
 
 def compute_sparse_flow(prev_img, next_img):
     """
-    Detects key points and computes their movement
-    using sparse optical flow.
+    Detects a high density of key points and computes their movement
+    using sparse optical flow over strictly consecutive frames.
     """
-
-    # Convert images to grayscale if they are colored
     if len(prev_img.shape) == 3:
         prev_gray = cv2.cvtColor(prev_img, cv2.COLOR_BGR2GRAY)
         next_gray = cv2.cvtColor(next_img, cv2.COLOR_BGR2GRAY)
     else:
         prev_gray, next_gray = prev_img, next_img
 
-    # 1. Detect points to track using Shi-Tomasi corner detection
-    '''
-    p0 = cv2.goodFeaturesToTrack(
-    prev_gray, 
-    mask=None, 
-    maxCorners=1000,    # Sube de 100 a 1000
-    qualityLevel=0.01,  # Baja de 0.3 a 0.01 (acepta esquinas más débiles)
-    minDistance=3,      # Baja de 7 a 3 (permite puntos más juntos)
-    blockSize=3
-) '''
+    # Modificado para maximizar la densidad estadística pedida por Magri
     p0 = cv2.goodFeaturesToTrack(
         prev_gray,
         mask=None,
-        maxCorners=100,
-        qualityLevel=0.3,
-        minDistance=7,
-        blockSize=7
+        maxCorners=1200,    # Capacidad masiva de puntos
+        qualityLevel=0.005,  # Captura texturas sutiles del asfalto
+        minDistance=3,      # Puntos más densos
+        blockSize=3
     )
     
-    
-    # Security verification: if it does not find points, return void arrays
     if p0 is None:
         return np.array([]), np.array([])
 
-    # 2. Compute optical flow using the Lucas-Kanade method
     p1, st, err = cv2.calcOpticalFlowPyrLK(prev_gray, next_gray, p0, None)
 
-    # Keep only successfully tracked points
     good_new = p1[st == 1]
     good_old = p0[st == 1]
 

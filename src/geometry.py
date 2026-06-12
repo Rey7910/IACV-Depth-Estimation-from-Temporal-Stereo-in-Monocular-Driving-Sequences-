@@ -74,30 +74,41 @@ def estimate_vanishing_point(lines):
     return None
 
 
-def validate_with_cross_ratio(p0, p1, p2, tti_est):
+def validate_with_cross_ratio(p0, p1, p2, foe, threshold_min=0.8, threshold_max=1.2, epsilon=1e-6):
     """
-    2. TEMPORAL CONSISTENCY (Cross-Ratio):
-    Validates whether the point progression across 3 frames (p0, p1, p2)
-    is linearly consistent with the predicted impact.
-
-    Invariant:
-    CR(p0, p1, p2, p_inf) should remain constant under constant velocity.
+    Validates temporal consistency using the true projective Cross-Ratio 
+    under a constant velocity assumption, relative to the Epipole / FOE.
+    
+    Cross-Ratio(p0, p1, p2, foe) = ((d0 - d2) * (d1 - d_foe)) / ((d1 - d2) * (d0 - d_foe))
+    Since the distance from any point to the FOE in the time-horizon limits to infinity
+    relative to the localized frame delta, the formulation simplifies downstream to checking
+    the harmonic growth of radial distances: d0/d1 relative to d1/d2.
     """
-    # d1: distance between p0 and p1
-    # d2: distance between p1 and p2
-    d1 = np.linalg.norm(p1 - p0, axis=1)
-    d2 = np.linalg.norm(p2 - p1, axis=1)
+    # foe is expected as an array/tuple: [cx, cy]
+    foe = np.array(foe).reshape(1, 2)
     
-    # Under zero acceleration, expansion should remain proportional.
-    # If d2 differs drastically from d1 (after perspective adjustment),
-    # the point is considered unreliable.
-    ratio = d2 / (d1 + 1e-6)
+    # 1. Compute radial Euclidean distances from the FOE to the features in each frame
+    d0 = np.linalg.norm(p0 - foe, axis=1)
+    d1 = np.linalg.norm(p1 - foe, axis=1)
+    d2 = np.linalg.norm(p2 - foe, axis=1)
     
-    # A ratio close to 1 (with slight growth due to perspective expansion)
-    # indicates temporal stability.
-    is_consistent = (ratio > 0.8) & (ratio < 1.5)
+    # 2. To avoid division by zero or negative geometry due to flow noise
+    # We evaluate the strict harmonic expansion mapping for constant velocity
+    # In pure translation, standard perspective scaling states: (d1 - d0)/d0 = delta_s / Z
+    # Projectively, the Cross-Ratio invariant for 3 time steps + FOE simplifies to:
+    # CR = (d0 * (d2 - d1)) / (d2 * (d1 - d0))
+    # For zero acceleration (constant speed), this theoretical value CR must equal exactly 1.0.
     
-    return is_consistent
+    numerator = d0 * (d2 - d1)
+    denominator = d2 * (d1 - d0) + epsilon
+    
+    cross_ratios = numerator / denominator
+    
+    # 3. Filter points whose Cross-Ratio deviates significantly from the ideal 1.0
+    # A tight threshold (e.g., 0.8 to 1.2) captures true constant-velocity static background.
+    mask_consistent = (cross_ratios >= threshold_min) & (cross_ratios <= threshold_max)
+    
+    return mask_consistent
 
 
 def filter_static_points(p0, p1, foe, threshold=0.35):
