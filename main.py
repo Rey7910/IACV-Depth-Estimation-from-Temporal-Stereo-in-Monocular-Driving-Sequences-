@@ -2,7 +2,10 @@ import os
 import cv2
 import numpy as np
 from src.dataset import KittiTemporalDataset
-from src.metrics import compute_depth_metrics
+from src.metrics import( 
+    compute_depth_metrics, 
+    align_depth_scale
+)
 from src.temporal_stereo import (
     compute_bidirectional_optical_flow,
     estimate_depth_with_rotation_compensation,
@@ -79,6 +82,15 @@ def main():
         pred_depth = filter_road_plane_obstacles(
             pred_depth, K, camera_height=1.65
         )
+
+        if depth_gt is not None:
+            # Create a combined mask for valid pixels and available ground truth
+            eval_mask = (valid_mask) & (depth_gt > 0) & (pred_depth > 0)
+            
+            pred_depth, estimated_scale = align_depth_scale(pred_depth, depth_gt, eval_mask)
+            
+            print(f"  [Scale Correction] Applied scale factor: {estimated_scale:.4f}")
+        # ----------------------------------------------------------------------
 
         # 5. Compute metrics for current frame (Only if Ground Truth exists)
         if depth_gt is not None:

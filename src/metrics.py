@@ -47,3 +47,21 @@ def compute_depth_metrics(pred_depth, gt_depth):
         "Delta3": float(delta3),
         "Valid_Pixels": int(np.sum(mask)),
     }
+
+
+
+def align_depth_scale(pred_depth, depth_gt, valid_mask):
+    """
+    Calculates a global scale factor using the median ratio between 
+    Ground Truth (LiDAR) and Prediction, mitigating scale ambiguity.
+    """
+    mask = (valid_mask) & (depth_gt > 0) & (pred_depth > 0)
+    if not np.any(mask):
+        return pred_depth, 1.0
+    
+    # Compute median scale factor: median(GT / Pred)
+    scale_factor = np.median(depth_gt[mask] / pred_depth[mask])
+    
+    # Apply scale correction
+    aligned_depth = pred_depth * scale_factor
+    return aligned_depth, scale_factor
