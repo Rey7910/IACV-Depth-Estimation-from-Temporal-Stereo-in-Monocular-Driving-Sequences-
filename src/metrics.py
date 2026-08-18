@@ -1,13 +1,12 @@
 import numpy as np
 
 
-def compute_depth_metrics(pred_depth, gt_depth):
+def compute_depth_metrics(pred_depth, gt_depth, max_depth=35.0):
     """Calculates standard depth evaluation metrics by comparing predictions with
-
-    Ground Truth (LiDAR).
+    Ground Truth (LiDAR), filtering up to a maximum depth range.
     """
-    # Filter only pixels where both maps have valid values (> 0)
-    mask = (gt_depth > 0) & (pred_depth > 0)
+    # Filter pixels where both maps have valid values AND are within the max depth range
+    mask = (gt_depth > 0) & (pred_depth > 0) & (gt_depth < max_depth)
 
     if np.sum(mask) == 0:
         return {
@@ -47,7 +46,6 @@ def compute_depth_metrics(pred_depth, gt_depth):
         "Delta3": float(delta3),
         "Valid_Pixels": int(np.sum(mask)),
     }
-
 
 
 def align_depth_scale(pred_depth, depth_gt, valid_mask):

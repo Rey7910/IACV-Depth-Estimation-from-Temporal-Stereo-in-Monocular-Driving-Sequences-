@@ -94,7 +94,7 @@ def main():
 
         # 5. Compute metrics for current frame (Only if Ground Truth exists)
         if depth_gt is not None:
-            metrics = compute_depth_metrics(pred_depth, depth_gt)
+            metrics = compute_depth_metrics(pred_depth, depth_gt, max_depth=35.0)
 
             if metrics["Valid_Pixels"] > 0:
                 current_mae = metrics["MAE"]
