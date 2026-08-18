@@ -38,6 +38,25 @@ def load_oxts_velocity(oxts_dir, frame_idx):
         return None
 
 
+def load_oxts_data(oxts_dir, frame_idx):
+    """
+    Lee el archivo .txt de OXTS completo y extrae tanto la velocidad longitudinal (vf)
+    como las velocidades angulares [wx, wy, wz].
+    """
+    file_path = os.path.join(oxts_dir, f"{frame_idx:010d}.txt")
+    try:
+        data = np.loadtxt(file_path)
+        vf = data[8]          # Velocidad longitudinal (vx)
+        # En KITTI oxts data: índices 17, 18, 19 corresponden a las tasas angulares roll_rate, pitch_rate, yaw_rate
+        wx = data[17]
+        wy = data[18]
+        wz = data[19]
+        return vf, np.array([wx, wy, wz], dtype=np.float32)
+    except Exception as e:
+        print(f"Error cargando datos OXTS en {file_path}: {e}")
+        return 0.0, np.zeros(3, dtype=np.float32)
+
+
 def get_frame_interval(timestamps, frame_idx):
     """
     Computes the real time difference between the current frame
@@ -74,31 +93,50 @@ def load_velodyne_points(velo_path):
 
 
 def project_velo_to_image(points, P_rect, Tr_velo_to_cam):
-    """
-    Project 3D LiDAR points onto the 2D image plane.
-    """
+    """Projects 3D LiDAR points onto the 2D image plane.
 
-    # 1. Convert to homogeneous coordinates (N, 4)
-    pts_3d_hom = np.hstack(
-        (points, np.ones((points.shape[0], 1)))
-    )
+    Args:
+        points: (N, 3) XYZ coordinates from LiDAR
+        P_rect: (3, 4) Complete rectified projection matrix (must be 3x4 in shape)
+        Tr_velo_to_cam: (4, 4) Homogeneous transformation matrix from Velodyne to Camera
+    """
+    N = points.shape[0]
 
-    # 2. Transform from Velodyne to Camera 0
-    # (KITTI reference coordinate system)
-    # pts_cam = pts_3d_hom @ Tr_velo_to_cam.T
+    # 1. Homogeneous coordinates for Velodyne: (N, 4)
+    pts_3d_hom = np.hstack((points, np.ones((N, 1))))
+
+    # 2. Transform to camera frame: (4, 4) x (4, N) -> (4, N) -> transpose to (N, 4)
     pts_cam = (Tr_velo_to_cam @ pts_3d_hom.T).T
 
-    # 3. Project onto the image using P_rect
-    # Note: P_rect already includes rectification
-    # in KITTI 'extract' sequences
-    pts_2d_hom = (P_rect @ pts_cam.T).T
+    # Filter points in front of the camera (Z > 0)
+    valid = pts_cam[:, 2] > 1e-5
+    pts_cam_valid = pts_cam[valid]  # Shape: (M, 4)
 
-    # 4. Normalize to obtain pixel coordinates (u, v)
-    depth = pts_2d_hom[:, 2]
-    pts_2d = pts_2d_hom[:, :2] / pts_2d_hom[:, 2:3]
+    # Ensure P_rect is size (3, 4) in case it was passed trimmed/cropped
+    if P_rect.shape[1] == 3:
+        # If passed as 3x3 by mistake, append a column of zeros
+        P_rect_full = np.hstack((P_rect, np.zeros((3, 1))))
+    else:
+        P_rect_full = P_rect
 
-    return pts_2d, depth
+    # 3. Projection to image: P_rect_full (3, 4) x pts_cam_valid.T (4, M) -> (3, M) -> transpose to (M, 3)
+    pts_2d_hom = (P_rect_full @ pts_cam_valid.T).T
 
+    # 4. Normalize by depth (Z)
+    depths = pts_2d_hom[:, 2]
+    u = pts_2d_hom[:, 0] / depths
+    v = pts_2d_hom[:, 1] / depths
+
+    # 5. Map back to original sizes
+    pts_2d = np.zeros((N, 2), dtype=np.float32)
+    depth_full = np.zeros((N,), dtype=np.float32)
+
+    original_indices = np.where(valid)[0]
+    pts_2d[original_indices, 0] = u
+    pts_2d[original_indices, 1] = v
+    depth_full[original_indices] = depths
+
+    return pts_2d, depth_full
 
 def load_kitti_calib(calib_cam_path, calib_velo_path):
     """

@@ -1,358 +1,58 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
+import os
 
-
-def plot_tti_and_depth(img, p0, p1, depths, foe, vf, title="TTI & Depth Estimation"):
+def save_depth_comparison(img_t, pred_depth, depth_gt, output_path="output_comparison.png"):
     """
-    Visualizes motion vectors, estimated depth, and TTI.
+    Generates and saves a side-by-side or stacked comparative image containing:
+    1. Original image (t)
+    2. Predicted depth map (Temporal Stereo) with JET colormap
+    3. Ground Truth depth map (LiDAR) with JET colormap
     """
-    plt.figure(figsize=(15, 10))
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    H, W = img_t.shape[:2]
 
-    for i in range(len(p0)):
-        a, b = p0[i].ravel()
-        c, d = p1[i].ravel()
+    # --- 1. Normalize and color predicted depth ---
+    # Filter out zeros so visualization ignores unvalued pixels
+    valid_pred = pred_depth[pred_depth > 0]
+    if len(valid_pred) > 0:
+        min_p, max_p = np.percentile(valid_pred, 5), np.percentile(valid_pred, 95)
+    else:
+        min_p, max_p = 0.0, 50.0
 
-        # 1. Draw motion vector (yellow)
-        plt.arrow(a, b, c - a, d - b, color='yellow', head_width=3, alpha=0.8)
+    # Normalize between 0 and 255 for the heatmap
+    pred_norm = np.clip((pred_depth - min_p) / (max_p - min_p + 1e-5), 0, 1)
+    pred_colored = cv2.applyColorMap((pred_norm * 255).astype(np.uint8), cv2.COLORMAP_JET)
+    
+    # Set pixels without predicted depth to black
+    pred_colored[pred_depth == 0] = [0, 0, 0]
 
-        # 2. Depth and TTI labels
-        tti = depths[i] / vf if vf > 0 else 0
+    # --- 2. Normalize and color LiDAR Ground Truth ---
+    if depth_gt is not None:
+        valid_gt = depth_gt[depth_gt > 0]
+        if len(valid_gt) > 0:
+            min_gt, max_gt = np.percentile(valid_gt, 5), np.percentile(valid_gt, 95)
+        else:
+            min_gt, max_gt = 0.0, 50.0
 
-        plt.text(
-            a, b,
-            f"{depths[i]:.1f}m\n{tti:.1f}s",
-            color='lime',
-            fontsize=9,
-            fontweight='bold',
-            bbox=dict(facecolor='black', alpha=0.5, edgecolor='none', pad=1)
-        )
+        gt_norm = np.clip((depth_gt - min_gt) / (max_gt - min_gt + 1e-5), 0, 1)
+        gt_colored = cv2.applyColorMap((gt_norm * 255).astype(np.uint8), cv2.COLORMAP_JET)
+        gt_colored[depth_gt == 0] = [0, 0, 0]
+    else:
+        # If there is no LiDAR in this frame, create a gray image with warning text
+        gt_colored = np.zeros((H, W, 3), dtype=np.uint8)
+        cv2.putText(gt_colored, "No LiDAR GT", (W // 3, H // 2), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
-    # Draw the FOE
-    plt.plot(
-        foe[0],
-        foe[1],
-        'ro',
-        markersize=12,
-        markeredgecolor='white',
-        label='FOE'
-    )
+    # --- 3. Add title / text labels to each section ---
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(img_t, "1. Original Image (t)", (30, 40), font, 1, (0, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(pred_colored, "2. Predicted Depth (Temporal Stereo)", (30, 40), font, 1, (0, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(gt_colored, "3. LiDAR Ground Truth", (30, 40), font, 1, (0, 255, 255), 2, cv2.LINE_AA)
 
-    plt.title(f"{title} (vf={vf:.2f} m/s)", fontsize=15)
-    plt.legend()
-    plt.axis('off')
-    plt.show()
+    # --- 4. Vertically concatenate the three images ---
+    comparison = np.vstack((img_t, pred_colored, gt_colored))
 
-
-def plot_lidar_overlay(img, pts_2d, gt_depths, title="LiDAR-Image Overlay"):
-    """
-    Displays LiDAR points projected onto the image to verify alignment.
-    """
-    plt.figure(figsize=(15, 6))
-    h, w = img.shape[:2]
-
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-
-    # Filter points inside the image area
-    in_image = (
-        (pts_2d[:, 0] >= 0) & (pts_2d[:, 0] < w) &
-        (pts_2d[:, 1] >= 0) & (pts_2d[:, 1] < h)
-    )
-
-    sc = plt.scatter(
-        pts_2d[in_image, 0],
-        pts_2d[in_image, 1],
-        c=gt_depths[in_image],
-        s=1,
-        cmap='jet',
-        alpha=0.4
-    )
-
-    plt.xlim(0, w)
-    plt.ylim(h, 0)
-
-    plt.colorbar(sc, label='LiDAR Depth (m)')
-    plt.title(title)
-    plt.show()
-
-
-def plot_validation_stats(errors, z_comparison):
-    """
-    Generates the error histogram and the correlation plot versus LiDAR.
-    """
-    if not errors:
-        print("No errors available for visualization.")
-        return
-
-    plt.figure(figsize=(15, 5))
-
-    # Error histogram
-    plt.subplot(1, 2, 1)
-
-    plt.hist(
-        errors,
-        bins=10,
-        color='skyblue',
-        edgecolor='black',
-        range=(0, 1)
-    )
-
-    plt.axvline(
-        np.mean(errors),
-        color='red',
-        linestyle='--',
-        label=f'Mean: {np.mean(errors):.2f}'
-    )
-
-    plt.title("Relative Error Distribution (0–100%)")
-    plt.xlabel("Error (1.0 = 100%)")
-    plt.ylabel("Frequency")
-    plt.legend()
-
-    # Correlation plot
-    plt.subplot(1, 2, 2)
-
-    gt_v, est_v = zip(*z_comparison)
-
-    plt.scatter(
-        gt_v,
-        est_v,
-        color='green',
-        s=40,
-        alpha=0.7,
-        label='Estimated Points'
-    )
-
-    limit = max(max(gt_v), max(est_v)) + 5
-
-    plt.plot(
-        [0, limit],
-        [0, limit],
-        'r--',
-        label="Ideal Reference"
-    )
-
-    plt.xlim(0, limit)
-    plt.ylim(0, limit)
-
-    plt.title("Correlation: LiDAR Z vs TTI Z")
-    plt.xlabel("Ground Truth Z (m)")
-    plt.ylabel("Estimated Z (m)")
-
-    plt.grid(True, linestyle=':', alpha=0.6)
-    plt.legend()
-
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_vanishing_point_validation(
-    img,
-    foe_theoretical,
-    vp_estimated,
-    filtered_lines,
-    title="Projective Geometry Validation"
-):
-    """
-    Visualizes the convergence of road lines toward the vanishing point (VP)
-    and its relationship with the theoretical FOE.
-    """
-    plt.figure(figsize=(15, 8))
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    h, w = img.shape[:2]
-
-    # 1. Draw detected lines and their extension toward the VP
-    if filtered_lines is not None:
-        for line in filtered_lines:
-            x1, y1, x2, y2 = line[0]
-            plt.plot([x1, x2], [y1, y2], color='cyan', linewidth=2, alpha=0.8)
-
-            if vp_estimated is not None:
-                plt.plot(
-                    [x2, vp_estimated[0]],
-                    [y2, vp_estimated[1]],
-                    color='cyan',
-                    linestyle=':',
-                    linewidth=1,
-                    alpha=0.3
-                )
-
-    # 2. Draw theoretical FOE (red)
-    plt.plot(
-        foe_theoretical[0],
-        foe_theoretical[1],
-        'ro',
-        markersize=15,
-        markeredgecolor='white',
-        label='Theoretical FOE (Calibration)'
-    )
-
-    # 3. Draw estimated vanishing point (blue)
-    if vp_estimated is not None:
-        plt.plot(
-            vp_estimated[0],
-            vp_estimated[1],
-            'bx',
-            markersize=12,
-            markeredgewidth=3,
-            label='Vanishing Point (Lines)'
-        )
-
-    # 4. Perspective guides from lower corners
-    plt.plot(
-        [0, foe_theoretical[0]],
-        [h, foe_theoretical[1]],
-        'y--',
-        alpha=0.3,
-        label='Perspective Guide'
-    )
-
-    plt.plot(
-        [w, foe_theoretical[0]],
-        [h, foe_theoretical[1]],
-        'y--',
-        alpha=0.3
-    )
-
-    plt.title(title, fontsize=16)
-    plt.legend(loc='upper right')
-    plt.axis('off')
-
-    # 5. Error diagnostics
-    if vp_estimated is not None:
-        pixel_error = np.linalg.norm(vp_estimated - foe_theoretical)
-
-        print(f"--- GEOMETRY DIAGNOSTICS ---")
-        print(f"FOE-VP Distance: {pixel_error:.2f} pixels")
-
-        status = "SUCCESS" if pixel_error < 50 else f"WARNING ({pixel_error:.1f}px)"
-        desc = "Straight-line motion." if pixel_error < 50 else "Possible curve/inclination."
-        print(f"STATUS: {status}. {desc}")
-
-    plt.show()
-
-
-def plot_cross_ratio_validation(
-    img,
-    p0_final,
-    p2_final,
-    p0_noisy,
-    total_points,
-    title="Experiment 03: Cross-Ratio Validation"
-):
-    """
-    Visualizes consistent flow points (green) and rejected points (red)
-    based on the projective invariant Cross-Ratio.
-    """
-    plt.figure(figsize=(15, 8))
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-
-    # 1. Draw consistent points (green long vectors)
-    for i in range(len(p0_final)):
-        plt.arrow(
-            p0_final[i, 0], p0_final[i, 1],
-            p2_final[i, 0] - p0_final[i, 0],
-            p2_final[i, 1] - p0_final[i, 1],
-            color='lime',
-            head_width=3,
-            alpha=0.7,
-            label='Consistent' if i == 0 else ""
-        )
-
-    # 2. Draw noisy points (red dots)
-    if len(p0_noisy) > 0:
-        plt.scatter(
-            p0_noisy[:, 0],
-            p0_noisy[:, 1],
-            color='red',
-            s=20,
-            alpha=0.8,
-            label='Inconsistent (Noise/Dynamic)'
-        )
-
-    # Metrics
-    reliability = (len(p0_final) / total_points) * 100
-
-    plt.title(
-        f"{title}\nConsistent: {len(p0_final)} | Discarded: {len(p0_noisy)}",
-        fontsize=15
-    )
-    plt.legend()
-    plt.axis('off')
-
-    print(f"--- TEMPORAL CONSISTENCY ---")
-    print(f"Temporal Reliability Index: {reliability:.2f}%")
-
-    plt.show()
-
-
-def plot_dynamic_segmentation(
-    img,
-    p0_static,
-    p0_dynamic,
-    p1_dynamic,
-    foe,
-    title="Experiment 04: Dynamic Segmentation"
-):
-    """
-    Visualizes scene segmentation: static points in green
-    and dynamic objects (with motion vectors) in red.
-    """
-    plt.figure(figsize=(15, 8))
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-
-    # 1. Draw static points (green) - reliable scene
-    if len(p0_static) > 0:
-        plt.scatter(
-            p0_static[:, 0],
-            p0_static[:, 1],
-            color='lime',
-            s=15,
-            alpha=0.6,
-            label='Static Scene (Safe for TTI)'
-        )
-
-    # 2. Draw dynamic vectors (red) - moving objects
-    if len(p0_dynamic) > 0:
-        for i in range(len(p0_dynamic)):
-            a, b = p0_dynamic[i]
-            c, d = p1_dynamic[i]
-
-            plt.arrow(
-                a, b,
-                c - a,
-                d - b,
-                color='red',
-                head_width=5,
-                width=1.5,
-                label='Dynamic Object' if i == 0 else ""
-            )
-
-    # 3. Draw FOE (yellow)
-    plt.plot(
-        foe[0],
-        foe[1],
-        'yo',
-        markersize=12,
-        label='Epipole (FOE)'
-    )
-
-    # Statistics
-    total_pts = len(p0_static) + len(p0_dynamic)
-    perc_dynamic = (len(p0_dynamic) / total_pts) * 100 if total_pts > 0 else 0
-
-    plt.title(
-        f"{title}\nDynamic: {perc_dynamic:.2f}% of points",
-        fontsize=15
-    )
-
-    plt.legend()
-    plt.axis('off')
-
-    print(f"--- SEGMENTATION REPORT ---")
-    print(f"Static points: {len(p0_static)}")
-    print(f"Dynamic points: {len(p0_dynamic)}")
-    print(f"Percentage of dynamic motion: {perc_dynamic:.2f}%")
-
-    plt.show()
+    # Save the resulting image
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+    cv2.imwrite(output_path, comparison)
+    print(f"[Visualization] Comparative image successfully saved at: {output_path}")
