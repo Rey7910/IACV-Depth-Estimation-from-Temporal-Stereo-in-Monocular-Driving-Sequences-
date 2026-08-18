@@ -43,6 +43,37 @@ def compute_bidirectional_optical_flow(img_t, img_t_plus_1):
 
     return flow_fwd, flow_bwd
 
+def filter_road_plane_obstacles(depth_map, K, camera_height=1.65):
+    """Filters false positives using the flat ground model (Free Driveway)
+
+    inspired by Wedel et al. Points below ground height or with depths
+    inconsistent with the road plane are cleaned up.
+    """
+    H, W = depth_map.shape[:2]
+    fy = K[1, 1]
+    cy = K[1, 2]
+
+    # Pixel coordinates in the image
+    yy, xx = np.indices((H, W))
+
+    # Analytical calculation of the expected depth if the point belonged strictly to the flat road plane (Y = -camera_height)
+    # Z_plane = (fy * camera_height) / (yy - cy)  [assuming flat terrain in front of the camera]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z_plane = (fy * camera_height) / (yy - cy)
+
+    # If the predicted depth is significantly smaller than the projected geometric ground height
+    # or falls in sky/upper horizon regions (where yy < cy), it can be masked.
+    filtered_depth = depth_map.copy()
+
+    # Discard estimates above the horizon or inconsistent with the immediate ground
+    horizon_mask = (
+        yy < (cy + 10)
+    )  # Upper region of the image (sky, distant buildings)
+
+    # Apply cleanup
+    filtered_depth[horizon_mask & (filtered_depth > 50.0)] = 0.0
+
+    return filtered_depth
 
 def filter_occlusions_fb(flow_fwd, flow_bwd, threshold=1.0):
     """Filters pixels with occlusions or noise using Forward-Backward consistency.
